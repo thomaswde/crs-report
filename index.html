@@ -150,9 +150,51 @@
             return Math.round(gb) + ' GB';
         }
         
+        /**
+         * Parses a CSV string into an array of objects.
+         * This version is more robust and handles quoted fields.
+         * @param {string} csvText The raw CSV data as a string.
+         * @returns {Array<Object>|null} The parsed data or null on error.
+         */
         function parseCSV(csvText) {
+            // Helper to parse a single CSV line, respecting quotes
+            const parseLine = (line) => {
+                const values = [];
+                let current = '';
+                let inQuotes = false;
+                // Handle potential trailing carriage return for windows files
+                const cleanLine = line.trim(); 
+
+                for (let i = 0; i < cleanLine.length; i++) {
+                    const char = cleanLine[i];
+
+                    if (char === '"' && (i === 0 || cleanLine[i-1] !== '"')) {
+                         // A non-escaped quote toggles the inQuotes flag
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        // If it's a comma and we're not in quotes, it's a delimiter
+                        values.push(current.trim());
+                        current = '';
+                    } else {
+                        // Otherwise, add the character to the current value (ignoring quotes used for wrapping)
+                        if (char !== '"') {
+                            current += char;
+                        }
+                    }
+                }
+                // Add the last value
+                values.push(current.trim());
+                return values;
+            };
+            
             const lines = csvText.trim().split('\n');
-            const headers = lines[0].split(',').map(h => h.trim());
+            if (lines.length < 2) {
+                showError("CSV file must have a header and at least one data row.");
+                return null;
+            }
+            
+            const headers = parseLine(lines[0]);
+
             const dateIndex = headers.indexOf('Summary Date UTC');
             const utilizedIndex = headers.indexOf('Utilized');
             const reservedIndex = headers.indexOf('Reserved');
@@ -163,14 +205,21 @@
             }
 
             return lines.slice(1).map(line => {
-                const values = line.split(',');
+                if (!line.trim()) return null; // Skip empty lines
+                const values = parseLine(line);
+                
+                // Basic check for row integrity
+                if (values.length < headers.length) return null;
+
                 return {
-                    date: new Date(values[dateIndex].trim()),
-                    utilized: parseInt(values[utilizedIndex], 10) || 0,
-                    reserved: parseInt(values[reservedIndex], 10) || 0
+                    date: new Date(values[dateIndex]),
+                    // Sanitize numbers by removing commas before parsing
+                    utilized: parseInt(String(values[utilizedIndex]).replace(/,/g, ''), 10) || 0,
+                    reserved: parseInt(String(values[reservedIndex]).replace(/,/g, ''), 10) || 0
                 };
-            }).filter(d => !isNaN(d.date.getTime())).sort((a, b) => a.date - b.date);
+            }).filter(d => d && !isNaN(d.date.getTime())).sort((a, b) => a.date - b.date);
         }
+
 
         function linearRegression(data) {
             const n = data.length;
@@ -224,11 +273,13 @@
 
             // --- FILTER DATA FOR DYNAMIC CHARTS ---
             const lookbackDate = new Date();
-            lookbackDate.setDate(lookbackDate.getDate() - lookbackDays);
+            const latestDate = new Date(fullParsedData[fullParsedData.length -1].date);
+            lookbackDate.setTime(latestDate.getTime() - (lookbackDays * 24 * 60 * 60 * 1000));
+
             const filteredData = fullParsedData.filter(d => d.date >= lookbackDate);
             
             if (filteredData.length < 2) {
-                showError(`Not enough data for the selected lookback period (${lookbackDays} days).`);
+                showError(`Not enough data for the selected lookback period (${lookbackDays} days). At least 2 data points are required.`);
                 return;
             }
 
@@ -238,7 +289,6 @@
             const trendlineData = filteredData.map((d, i) => ({ x: d.date.getTime(), y: slope * i + intercept }));
             const targetReserved = filteredData[filteredData.length - 1].reserved;
             
-            // Update titles and descriptions
             document.getElementById('crossover-desc').textContent = `Based on the trend over the last ${lookbackDays} days.`;
             document.getElementById('growth-desc').textContent = `Average daily increase over the last ${lookbackDays} days.`;
             document.getElementById('trend-chart-title').textContent = `Utilized Capacity Trend (Last ${lookbackDays} Days)`;
@@ -277,7 +327,7 @@
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     scales: {
-                        x: { type: 'time', time: { unit: 'month' }, title: { display: true, text: 'Date' } },
+                        x: { type: 'time', time: { unit: lookbackDays <= 31 ? 'day' : 'month' }, title: { display: true, text: 'Date' } },
                         y: { beginAtZero: false, title: { display: true, text: 'Daily Ingest (TB)' }, ticks: { stepSize: 5000, callback: (v) => (v / 1000) + ' TB' } }
                     },
                     plugins: { tooltip: { mode: 'index', intersect: false, callbacks: { label: (c) => `${c.dataset.label}: ${formatGB(c.parsed.y)}` } } },
@@ -285,7 +335,6 @@
                 }
             });
 
-            // Show dashboard and enable controls
             uploadPrompt.classList.add('hidden');
             dashboardContent.classList.remove('hidden');
             exportPdfBtn.disabled = false;
