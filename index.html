@@ -102,6 +102,19 @@
                     <h1 class="text-3xl font-bold text-gray-900">CRS Ingest Report</h1>
                     <p class="text-gray-600">Visualizing Daily CRS Ingest (GB/Day) vs. Reserved Capacity</p>
                 </header>
+                
+                <!-- New Summary Metrics Row -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-white p-6 rounded-2xl shadow-md text-center">
+                        <h2 class="text-xl font-semibold text-gray-700 mb-2">14-Day Average Usage</h2>
+                        <p id="summary-avg-usage" class="text-4xl font-bold text-[#261F63]">--</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-2xl shadow-md text-center">
+                        <h2 class="text-xl font-semibold text-gray-700 mb-2">Current Reserved Capacity</h2>
+                        <p id="summary-reserved-capacity" class="text-4xl font-bold text-[#261F63]">--</p>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <div class="bg-white p-6 rounded-2xl shadow-md flex flex-col items-center">
                         <h2 class="text-xl font-semibold mb-4 self-start">Average Usage (Last 14 Days)</h2>
@@ -150,39 +163,25 @@
             return Math.round(gb) + ' GB';
         }
         
-        /**
-         * Parses a CSV string into an array of objects.
-         * This version is more robust and handles quoted fields.
-         * @param {string} csvText The raw CSV data as a string.
-         * @returns {Array<Object>|null} The parsed data or null on error.
-         */
         function parseCSV(csvText) {
-            // Helper to parse a single CSV line, respecting quotes
             const parseLine = (line) => {
                 const values = [];
                 let current = '';
                 let inQuotes = false;
-                // Handle potential trailing carriage return for windows files
                 const cleanLine = line.trim(); 
-
                 for (let i = 0; i < cleanLine.length; i++) {
                     const char = cleanLine[i];
-
                     if (char === '"' && (i === 0 || cleanLine[i-1] !== '"')) {
-                         // A non-escaped quote toggles the inQuotes flag
                         inQuotes = !inQuotes;
                     } else if (char === ',' && !inQuotes) {
-                        // If it's a comma and we're not in quotes, it's a delimiter
                         values.push(current.trim());
                         current = '';
                     } else {
-                        // Otherwise, add the character to the current value (ignoring quotes used for wrapping)
                         if (char !== '"') {
                             current += char;
                         }
                     }
                 }
-                // Add the last value
                 values.push(current.trim());
                 return values;
             };
@@ -194,7 +193,6 @@
             }
             
             const headers = parseLine(lines[0]);
-
             const dateIndex = headers.indexOf('Summary Date UTC');
             const utilizedIndex = headers.indexOf('Utilized');
             const reservedIndex = headers.indexOf('Reserved');
@@ -205,21 +203,16 @@
             }
 
             return lines.slice(1).map(line => {
-                if (!line.trim()) return null; // Skip empty lines
+                if (!line.trim()) return null;
                 const values = parseLine(line);
-                
-                // Basic check for row integrity
                 if (values.length < headers.length) return null;
-
                 return {
                     date: new Date(values[dateIndex]),
-                    // Sanitize numbers by removing commas before parsing
                     utilized: parseInt(String(values[utilizedIndex]).replace(/,/g, ''), 10) || 0,
                     reserved: parseInt(String(values[reservedIndex]).replace(/,/g, ''), 10) || 0
                 };
             }).filter(d => d && !isNaN(d.date.getTime())).sort((a, b) => a.date - b.date);
         }
-
 
         function linearRegression(data) {
             const n = data.length;
@@ -252,14 +245,21 @@
             if (usagePieChartInstance) usagePieChartInstance.destroy();
             if (usageTrendChartInstance) usageTrendChartInstance.destroy();
 
-            // --- PIE CHART (ALWAYS LAST 14 DAYS OF FULL DATASET) ---
+            // --- SUMMARY METRICS & PIE CHART (from last 14 days) ---
+            const summaryAvgUsageEl = document.getElementById('summary-avg-usage');
+            const summaryReservedCapacityEl = document.getElementById('summary-reserved-capacity');
             const last14DaysData = fullParsedData.slice(-14);
+            
             if (last14DaysData.length > 0) {
-                 const avgUtilized14Days = last14DaysData.reduce((sum, d) => sum + d.utilized, 0) / last14DaysData.length;
-                 const latestReserved = last14DaysData[last14DaysData.length - 1].reserved;
-                 const avgFree = Math.max(0, latestReserved - avgUtilized14Days);
-                 const usedPercentage = latestReserved > 0 ? ((avgUtilized14Days / latestReserved) * 100).toFixed(1) : 0;
-                 const freePercentage = latestReserved > 0 ? ((avgFree / latestReserved) * 100).toFixed(1) : 0;
+                const avgUtilized14Days = last14DaysData.reduce((sum, d) => sum + d.utilized, 0) / last14DaysData.length;
+                const latestReserved = last14DaysData[last14DaysData.length - 1].reserved;
+                
+                summaryAvgUsageEl.textContent = formatGB(avgUtilized14Days) + ' / day';
+                summaryReservedCapacityEl.textContent = formatGB(latestReserved) + ' / day';
+
+                const avgFree = Math.max(0, latestReserved - avgUtilized14Days);
+                const usedPercentage = latestReserved > 0 ? ((avgUtilized14Days / latestReserved) * 100).toFixed(1) : 0;
+                const freePercentage = latestReserved > 0 ? ((avgFree / latestReserved) * 100).toFixed(1) : 0;
 
                 usagePieChartInstance = new Chart(document.getElementById('usagePieChart'), {
                     type: 'doughnut',
@@ -269,13 +269,15 @@
                     },
                     options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => `${c.label}: ${formatGB(c.parsed)}` } } } }
                 });
+            } else {
+                 summaryAvgUsageEl.textContent = 'N/A';
+                 summaryReservedCapacityEl.textContent = 'N/A';
             }
 
             // --- FILTER DATA FOR DYNAMIC CHARTS ---
             const lookbackDate = new Date();
-            const latestDate = new Date(fullParsedData[fullParsedData.length -1].date);
+            const latestDate = new Date(fullParsedData[fullParsedData.length - 1].date);
             lookbackDate.setTime(latestDate.getTime() - (lookbackDays * 24 * 60 * 60 * 1000));
-
             const filteredData = fullParsedData.filter(d => d.date >= lookbackDate);
             
             if (filteredData.length < 2) {
@@ -283,7 +285,6 @@
                 return;
             }
 
-            // --- DYNAMIC CALCULATIONS & RENDERING ---
             const regressionData = filteredData.map((d, i) => ({ x: i, y: d.utilized }));
             const { slope, intercept } = linearRegression(regressionData);
             const trendlineData = filteredData.map((d, i) => ({ x: d.date.getTime(), y: slope * i + intercept }));
@@ -315,20 +316,50 @@
                 dailyGrowthEl.className = 'text-3xl font-bold p-4 rounded-lg text-[#7F2854] bg-[#F05818]/50';
             }
             
+            // --- DYNAMIC AXIS CONFIGURATION ---
+            const yMax = Math.max(...filteredData.map(d => d.utilized), ...filteredData.map(d => d.reserved));
+            const paddedYMax = yMax > 0 ? yMax * 1.1 : 10; // Ensure max is not 0
+
+            let yAxisTitle = 'Daily Ingest (TB)';
+            let yTickCallback = (v) => (v / 1000).toFixed(1) + ' TB';
+
+            // Threshold to switch to GB is 2 TB
+            if (paddedYMax < 2000) { 
+                yAxisTitle = 'Daily Ingest (GB)';
+                yTickCallback = (v) => v + ' GB';
+            }
+
+            let xAxisUnit = 'month';
+            if (lookbackDays <= 31) {
+                xAxisUnit = 'day';
+            } else if (lookbackDays <= 180) {
+                xAxisUnit = 'week';
+            }
+            
             // --- LINE CHART ---
             usageTrendChartInstance = new Chart(document.getElementById('usageTrendChart'), {
                 type: 'line',
                 data: {
                     datasets: [
                         { label: 'Daily Utilization', data: filteredData.map(d => ({ x: d.date.getTime(), y: d.utilized })), borderColor: '#261F63', backgroundColor: 'rgba(38, 31, 99, 0.1)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3 },
-                        { label: 'Trendline', data: trendlineData, borderColor: '#F05918', borderWidth: 2, pointRadius: 0, borderDash: [5, 5], fill: false }
+                        { label: 'Reserved Capacity', data: filteredData.map(d => ({ x: d.date.getTime(), y: d.reserved })), borderColor: '#F05918', borderWidth: 2, pointRadius: 0, fill: false },
+                        { label: 'Trendline', data: trendlineData, borderColor: '#00AAEF', borderWidth: 2, pointRadius: 0, borderDash: [5, 5], fill: false }
                     ]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     scales: {
-                        x: { type: 'time', time: { unit: lookbackDays <= 31 ? 'day' : 'month' }, title: { display: true, text: 'Date' } },
-                        y: { beginAtZero: false, title: { display: true, text: 'Daily Ingest (TB)' }, ticks: { stepSize: 5000, callback: (v) => (v / 1000) + ' TB' } }
+                        x: { 
+                            type: 'time', 
+                            time: { unit: xAxisUnit }, 
+                            title: { display: true, text: 'Date' } 
+                        },
+                        y: { 
+                            beginAtZero: true, 
+                            max: paddedYMax,
+                            title: { display: true, text: yAxisTitle }, 
+                            ticks: { callback: yTickCallback } 
+                        }
                     },
                     plugins: { tooltip: { mode: 'index', intersect: false, callbacks: { label: (c) => `${c.dataset.label}: ${formatGB(c.parsed.y)}` } } },
                     interaction: { mode: 'index', intersect: false }
@@ -370,7 +401,6 @@
                 });
         }
 
-        // --- EVENT LISTENERS ---
         fileInput.addEventListener('change', (event) => {
             const file = event.target.files[0];
             if (!file) return;
@@ -381,7 +411,7 @@
                 if (fullParsedData && fullParsedData.length > 0) {
                     renderDashboard();
                 } else if (!errorMessageDiv.classList.contains('hidden')) {
-                    // showError was already called by parseCSV
+                    /* showError was already called */
                 } else {
                     showError("File contains no valid data rows.");
                 }
