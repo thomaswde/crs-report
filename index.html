@@ -301,20 +301,19 @@
                 const crossoverDate = new Date(startDate);
                 crossoverDate.setDate(startDate.getDate() + Math.ceil(daysToCrossover));
                 crossoverDateEl.textContent = crossoverDate.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-                crossoverDateEl.className = 'text-3xl font-bold p-4 rounded-lg text-indigo-600 bg-indigo-50';
+                crossoverDateEl.className = 'text-3xl font-bold p-4 rounded-lg text-[#F05918]';
             } else {
                 crossoverDateEl.textContent = "Not forecast";
-                crossoverDateEl.className = 'text-3xl font-bold p-4 rounded-lg text-gray-600 bg-gray-100';
+                crossoverDateEl.className = 'text-3xl font-bold p-4 rounded-lg text-gray-400';
             }
             
             const dailyGrowthEl = document.getElementById('dailyGrowth');
             if (slope >= 0) {
                 dailyGrowthEl.textContent = `+${slope.toFixed(1)} GB / day`;
-                dailyGrowthEl.className = 'text-3xl font-bold p-4 rounded-lg text-[#261F63] bg-[#DAED43]/50';
             } else {
                 dailyGrowthEl.textContent = `${slope.toFixed(1)} GB / day`;
-                dailyGrowthEl.className = 'text-3xl font-bold p-4 rounded-lg text-[#7F2854] bg-[#F05818]/50';
             }
+            dailyGrowthEl.className = 'text-3xl font-bold p-4 rounded-lg text-[#00AAEF]';
             
             // --- DYNAMIC AXIS CONFIGURATION ---
             const yMax = Math.max(...filteredData.map(d => d.utilized), ...filteredData.map(d => d.reserved));
