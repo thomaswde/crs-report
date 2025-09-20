@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive CRS Report Generator</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <!-- External Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #csv-upload { display: none; }
+
+        /* Base button style */
+        .btn {
+            cursor: pointer;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: background-color 0.2s;
+            color: #FFFFFF;
+            border: none;
+        }
+
+        /* Upload button specific styles */
+        .upload-btn {
+            background-color: #261F63; /* Sapphire */
+        }
+        .upload-btn:hover {
+            background-color: #7F2854; /* Plum */
+        }
+        
+        /* Export button styles */
+        .export-btn-active {
+            background-color: #7F2854; /* Plum */
+        }
+        .export-btn-active:hover {
+            background-color: #261F63; /* Sapphire */
+        }
+        .export-btn-disabled {
+            background-color: #898A8D; /* Medium Gray */
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <!-- Top Ribbon / Header -->
+    <header class="bg-white shadow-md">
+        <div class="container mx-auto px-4 md:px-8 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <img src="eh_logo.png" alt="Logo" class="h-10" onerror="this.style.display='none'">
+                <h1 class="text-xl font-bold text-gray-900 hidden sm:block">CRS Ingest Dashboard</h1>
+            </div>
+            <div class="flex items-center space-x-2">
+                <label for="csv-upload" class="btn upload-btn">Upload CSV</label>
+                <input type="file" id="csv-upload" accept=".csv, text/csv">
+                <button id="export-pdf-btn" class="btn export-btn-disabled" disabled>Export as PDF</button>
+            </div>
+        </div>
+    </header>
+
+    <div class="container mx-auto p-4 md:p-8">
+        
+        <!-- Initial Upload Prompt -->
+        <div id="upload-prompt" class="text-center py-16">
+            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+            </svg>
+            <h2 class="mt-2 text-lg font-medium text-gray-900">Upload your data</h2>
+            <p class="mt-1 text-sm text-gray-500">Click the "Upload CSV" button to generate your report.</p>
+        </div>
+        
+        <!-- Error Message Display -->
+        <div id="error-message" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative my-4" role="alert">
+            <strong class="font-bold">Error:</strong>
+            <span class="block sm:inline" id="error-text"></span>
+        </div>
+
+        <!-- Main Dashboard Content -->
+        <main id="dashboard-content-wrapper">
+             <div id="dashboard-content" class="hidden">
+                <header class="mb-8">
+                    <h1 class="text-3xl font-bold text-gray-900">CRS Ingest Report</h1>
+                    <p class="text-gray-600">Visualizing Daily CRS Ingest (GB/Day) vs. Reserved Capacity</p>
+                </header>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    
+                    <!-- Card 1: 14-Day Average Usage Pie Chart -->
+                    <div class="bg-white p-6 rounded-2xl shadow-md flex flex-col items-center">
+                        <h2 class="text-xl font-semibold mb-4 self-start">Average Usage (Last 14 Days)</h2>
+                        <div class="w-full max-w-xs h-64 flex justify-center items-center">
+                            <canvas id="usagePieChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Card 2: Crossover Date Prediction -->
+                    <div class="bg-white p-6 rounded-2xl shadow-md flex flex-col justify-center items-center text-center">
+                         <h2 class="text-xl font-semibold mb-2">Capacity Crossover Forecast</h2>
+                         <p class="text-gray-500 mb-4">Predicted date when utilized capacity will surpass reserved capacity based on the historical trend.</p>
+                         <div id="crossoverDate" class="text-3xl font-bold p-4 rounded-lg"></div>
+                    </div>
+                    
+                    <!-- Card for Growth Rate -->
+                    <div class="bg-white p-6 rounded-2xl shadow-md flex flex-col justify-center items-center text-center">
+                         <h2 class="text-xl font-semibold mb-2">Daily Growth Rate</h2>
+                         <p class="text-gray-500 mb-4">Average daily increase in CRS Ingest over the last year.</p>
+                         <div id="dailyGrowth" class="text-3xl font-bold p-4 rounded-lg"></div>
+                    </div>
+
+                    <!-- Card 3: 1-Year Trend Line Chart -->
+                    <div class="bg-white p-6 rounded-2xl shadow-md md:col-span-2 lg:col-span-3">
+                        <h2 class="text-xl font-semibold mb-4">Utilized Capacity Trend (Last Year)</h2>
+                        <p class="text-sm text-gray-500 mb-4">Showing the daily utilized capacity (GB/day) and the calculated long-term trendline.</p>
+                        <div class="h-96">
+                            <canvas id="usageTrendChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- CHART INSTANCE VARIABLES ---
+        let usagePieChartInstance = null;
+        let usageTrendChartInstance = null;
+
+        // --- UI ELEMENT REFERENCES ---
+        const fileInput = document.getElementById('csv-upload');
+        const uploadPrompt = document.getElementById('upload-prompt');
+        const dashboardContent = document.getElementById('dashboard-content');
+        const errorMessageDiv = document.getElementById('error-message');
+        const errorTextSpan = document.getElementById('error-text');
+        const exportPdfBtn = document.getElementById('export-pdf-btn');
+
+        // --- UTILITY FUNCTIONS ---
+        function formatGB(gb) {
+            if (gb === undefined || gb === null || isNaN(gb)) return 'N/A';
+            if (gb >= 1000) {
+                return (gb / 1000).toFixed(2) + ' TB';
+            }
+            return Math.round(gb) + ' GB';
+        }
+        
+        function parseCSV(csvText) {
+            const lines = csvText.trim().split('\n');
+            const headers = lines[0].split(',').map(h => h.trim());
+            const dateIndex = headers.indexOf('Summary Date UTC');
+            const utilizedIndex = headers.indexOf('Utilized');
+            const reservedIndex = headers.indexOf('Reserved');
+
+            if (dateIndex === -1 || utilizedIndex === -1 || reservedIndex === -1) {
+                showError('CSV must contain "Summary Date UTC", "Utilized", and "Reserved" columns.');
+                return null;
+            }
+
+            return lines.slice(1).map(line => {
+                const values = line.split(',');
+                return {
+                    date: new Date(values[dateIndex].trim()),
+                    utilized: parseInt(values[utilizedIndex], 10) || 0,
+                    reserved: parseInt(values[reservedIndex], 10) || 0
+                };
+            }).filter(d => !isNaN(d.date.getTime())).sort((a, b) => a.date - b.date);
+        }
+
+        function linearRegression(data) {
+            const n = data.length;
+            if (n < 2) return { slope: 0, intercept: 0 };
+            let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+            for (const p of data) {
+                sumX += p.x; sumY += p.y; sumXY += p.x * p.y; sumXX += p.x * p.x;
+            }
+            const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+            const intercept = (sumY - slope * sumX) / n;
+            return { slope, intercept };
+        }
+
+        function showError(message) {
+            errorTextSpan.textContent = message;
+            errorMessageDiv.classList.remove('hidden');
+            dashboardContent.classList.add('hidden');
+            uploadPrompt.classList.remove('hidden');
+            exportPdfBtn.disabled = true;
+            exportPdfBtn.className = 'btn export-btn-disabled';
+        }
+        
+        function hideError() {
+            errorMessageDiv.classList.add('hidden');
+        }
+
+        /**
+         * Main function to generate/update the dashboard from parsed data.
+         */
+        function generateDashboard(allData) {
+            if (usagePieChartInstance) usagePieChartInstance.destroy();
+            if (usageTrendChartInstance) usageTrendChartInstance.destroy();
+
+            // --- 1. PIE CHART ---
+            const last14DaysData = allData.slice(-14);
+            const avgUtilized14Days = last14DaysData.reduce((sum, d) => sum + d.utilized, 0) / last14DaysData.length;
+            const latestReserved = last14DaysData.length > 0 ? last14DaysData[last14DaysData.length - 1].reserved : 0;
+            const avgFree = Math.max(0, latestReserved - avgUtilized14Days);
+            const usedPercentage = latestReserved > 0 ? ((avgUtilized14Days / latestReserved) * 100).toFixed(1) : 0;
+            const freePercentage = latestReserved > 0 ? ((avgFree / latestReserved) * 100).toFixed(1) : 0;
+
+            usagePieChartInstance = new Chart(document.getElementById('usagePieChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: [`Utilized (${usedPercentage}%)`, `Remaining (${freePercentage}%)`],
+                    datasets: [{ data: [avgUtilized14Days, avgFree], backgroundColor: ['#261F63', '#898A8D'], borderColor: '#ffffff', borderWidth: 4, hoverOffset: 8 }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, cutout: '70%',
+                    plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => `${c.label}: ${formatGB(c.parsed)}` } } }
+                }
+            });
+
+            // --- 2. TREND & CROSSOVER ---
+            const oneYearAgo = new Date();
+            oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+            const lastYearData = allData.filter(d => d.date >= oneYearAgo);
+            
+            if(lastYearData.length < 2) {
+                showError("Not enough data in the last year to calculate a trend.");
+                return;
+            }
+
+            const regressionData = lastYearData.map((d, i) => ({ x: i, y: d.utilized }));
+            const { slope, intercept } = linearRegression(regressionData);
+            const trendlineData = lastYearData.map((d, i) => ({ x: d.date.getTime(), y: slope * i + intercept }));
+            const targetReserved = lastYearData[lastYearData.length - 1].reserved;
+            const crossoverDateEl = document.getElementById('crossoverDate');
+
+            if (slope > 0 && targetReserved > intercept) {
+                const daysToCrossover = (targetReserved - intercept) / slope;
+                const startDate = lastYearData[0].date;
+                const crossoverDate = new Date(startDate);
+                crossoverDate.setDate(startDate.getDate() + Math.ceil(daysToCrossover));
+                crossoverDateEl.textContent = crossoverDate.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+                crossoverDateEl.className = 'text-3xl font-bold p-4 rounded-lg text-indigo-600 bg-indigo-50';
+            } else {
+                crossoverDateEl.textContent = "Not forecast";
+                crossoverDateEl.className = 'text-3xl font-bold p-4 rounded-lg text-gray-600 bg-gray-100';
+            }
+            
+            const dailyGrowthEl = document.getElementById('dailyGrowth');
+            if (slope >= 0) {
+                dailyGrowthEl.textContent = `+${slope.toFixed(1)} GB / day`;
+                dailyGrowthEl.className = 'text-3xl font-bold p-4 rounded-lg text-[#261F63] bg-[#DAED43]/50';
+            } else {
+                dailyGrowthEl.textContent = `${slope.toFixed(1)} GB / day`;
+                dailyGrowthEl.className = 'text-3xl font-bold p-4 rounded-lg text-[#7F2854] bg-[#F05818]/50';
+            }
+
+            // --- 3. LINE CHART ---
+            usageTrendChartInstance = new Chart(document.getElementById('usageTrendChart'), {
+                type: 'line',
+                data: {
+                    datasets: [
+                        { label: 'Daily Utilization', data: lastYearData.map(d => ({ x: d.date.getTime(), y: d.utilized })), borderColor: '#261F63', backgroundColor: 'rgba(38, 31, 99, 0.1)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3 },
+                        { label: 'Trendline', data: trendlineData, borderColor: '#F05918', borderWidth: 2, pointRadius: 0, borderDash: [5, 5], fill: false }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        x: { type: 'time', time: { unit: 'month' }, title: { display: true, text: 'Date' } },
+                        y: { beginAtZero: false, title: { display: true, text: 'Daily Ingest (TB)' }, ticks: { stepSize: 5000, callback: (v) => (v / 1000) + ' TB' } }
+                    },
+                    plugins: { tooltip: { mode: 'index', intersect: false, callbacks: { label: (c) => `${c.dataset.label}: ${formatGB(c.parsed.y)}` } } },
+                    interaction: { mode: 'index', intersect: false }
+                }
+            });
+
+            // Show dashboard and enable export
+            uploadPrompt.classList.add('hidden');
+            dashboardContent.classList.remove('hidden');
+            exportPdfBtn.disabled = false;
+            exportPdfBtn.className = 'btn export-btn-active';
+        }
+        
+        /**
+         * Exports the visible dashboard content to a PDF.
+         */
+        function exportToPDF() {
+            const { jsPDF } = window.jspdf;
+            const content = document.getElementById('dashboard-content');
+            
+            // Disable chart animations for capture
+            Chart.defaults.animation = false;
+            
+            // Temporarily make the content visible if it's not (for the rendering engine)
+            const wasHidden = content.classList.contains('hidden');
+            if(wasHidden) content.classList.remove('hidden');
+
+            html2canvas(content, { scale: 2, windowWidth: 1200 }) // Use a fixed width for consistent layout
+                .then(canvas => {
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+                    
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const pdfHeight = pdf.internal.pageSize.getHeight();
+                    const margin = 40;
+                    
+                    const imgProps = pdf.getImageProperties(imgData);
+                    const imgWidth = pdfWidth - margin * 2;
+                    const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+                    
+                    pdf.addImage(imgData, 'PNG', margin, margin, imgWidth, imgHeight);
+                    pdf.save('crs_ingest_report.pdf');
+                    
+                    // Restore chart animations and visibility
+                    Chart.defaults.animation = true;
+                    if(wasHidden) content.classList.add('hidden');
+                }).catch(err => {
+                    showError("Could not generate PDF. " + err.message);
+                    Chart.defaults.animation = true;
+                    if(wasHidden) content.classList.add('hidden');
+                });
+        }
+
+
+        // --- EVENT LISTENERS ---
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            hideError();
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = parseCSV(e.target.result);
+                if (data) generateDashboard(data);
+                fileInput.value = ''; // Reset input
+            };
+            reader.onerror = () => { showError('Failed to read the file.'); fileInput.value = ''; };
+            reader.readAsText(file);
+        });
+
+        exportPdfBtn.addEventListener('click', () => {
+            if(!exportPdfBtn.disabled){
+                exportToPDF();
+            }
+        });
+
+    </script>
+</body>
+</html>
+
