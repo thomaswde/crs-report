@@ -21,8 +21,8 @@
         }
         #csv-upload { display: none; }
 
-        /* Base button style */
-        .btn {
+        /* Base button/select style */
+        .control {
             cursor: pointer;
             padding: 0.75rem 1.5rem;
             border-radius: 0.5rem;
@@ -30,25 +30,29 @@
             transition: background-color 0.2s;
             color: #FFFFFF;
             border: none;
-        }
-
-        /* Upload button specific styles */
-        .upload-btn {
-            background-color: #261F63; /* Sapphire */
-        }
-        .upload-btn:hover {
-            background-color: #7F2854; /* Plum */
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            padding-right: 2.5rem;
         }
         
-        /* Export button styles */
-        .export-btn-active {
-            background-color: #7F2854; /* Plum */
+        .btn {
+             padding-right: 1.5rem; /* Override for buttons */
+             background-image: none;
         }
-        .export-btn-active:hover {
-            background-color: #261F63; /* Sapphire */
-        }
-        .export-btn-disabled {
-            background-color: #898A8D; /* Medium Gray */
+
+        .upload-btn { background-color: #261F63; }
+        .upload-btn:hover { background-color: #7F2854; }
+        
+        .export-btn-active { background-color: #7F2854; }
+        .export-btn-active:hover { background-color: #261F63; }
+
+        .disabled-control {
+            background-color: #898A8D;
             cursor: not-allowed;
             opacity: 0.7;
         }
@@ -56,7 +60,6 @@
 </head>
 <body class="bg-gray-100 text-gray-800">
 
-    <!-- Top Ribbon / Header -->
     <header class="bg-white shadow-md">
         <div class="container mx-auto px-4 md:px-8 py-4 flex justify-between items-center">
             <div class="flex items-center space-x-4">
@@ -64,16 +67,22 @@
                 <h1 class="text-xl font-bold text-gray-900 hidden sm:block">CRS Ingest Dashboard</h1>
             </div>
             <div class="flex items-center space-x-2">
-                <label for="csv-upload" class="btn upload-btn">Upload CSV</label>
+                 <select id="lookback-selector" class="control disabled-control" disabled>
+                    <option value="14">Last 14 Days</option>
+                    <option value="30">Last 30 Days</option>
+                    <option value="90">Last 90 Days</option>
+                    <option value="180">Last 180 Days</option>
+                    <option value="365" selected>Last 365 Days</option>
+                </select>
+                <label for="csv-upload" class="control btn upload-btn">Upload CSV</label>
                 <input type="file" id="csv-upload" accept=".csv, text/csv">
-                <button id="export-pdf-btn" class="btn export-btn-disabled" disabled>Export as PDF</button>
+                <button id="export-pdf-btn" class="control btn disabled-control" disabled>Export as PDF</button>
             </div>
         </div>
     </header>
 
     <div class="container mx-auto p-4 md:p-8">
         
-        <!-- Initial Upload Prompt -->
         <div id="upload-prompt" class="text-center py-16">
             <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
@@ -82,47 +91,36 @@
             <p class="mt-1 text-sm text-gray-500">Click the "Upload CSV" button to generate your report.</p>
         </div>
         
-        <!-- Error Message Display -->
         <div id="error-message" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative my-4" role="alert">
             <strong class="font-bold">Error:</strong>
             <span class="block sm:inline" id="error-text"></span>
         </div>
 
-        <!-- Main Dashboard Content -->
         <main id="dashboard-content-wrapper">
              <div id="dashboard-content" class="hidden">
                 <header class="mb-8">
                     <h1 class="text-3xl font-bold text-gray-900">CRS Ingest Report</h1>
                     <p class="text-gray-600">Visualizing Daily CRS Ingest (GB/Day) vs. Reserved Capacity</p>
                 </header>
-
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    
-                    <!-- Card 1: 14-Day Average Usage Pie Chart -->
                     <div class="bg-white p-6 rounded-2xl shadow-md flex flex-col items-center">
                         <h2 class="text-xl font-semibold mb-4 self-start">Average Usage (Last 14 Days)</h2>
                         <div class="w-full max-w-xs h-64 flex justify-center items-center">
                             <canvas id="usagePieChart"></canvas>
                         </div>
                     </div>
-
-                    <!-- Card 2: Crossover Date Prediction -->
                     <div class="bg-white p-6 rounded-2xl shadow-md flex flex-col justify-center items-center text-center">
                          <h2 class="text-xl font-semibold mb-2">Capacity Crossover Forecast</h2>
-                         <p class="text-gray-500 mb-4">Predicted date when utilized capacity will surpass reserved capacity based on the historical trend.</p>
+                         <p class="text-gray-500 mb-4" id="crossover-desc">Predicted date when utilized capacity will surpass reserved capacity.</p>
                          <div id="crossoverDate" class="text-3xl font-bold p-4 rounded-lg"></div>
                     </div>
-                    
-                    <!-- Card for Growth Rate -->
                     <div class="bg-white p-6 rounded-2xl shadow-md flex flex-col justify-center items-center text-center">
                          <h2 class="text-xl font-semibold mb-2">Daily Growth Rate</h2>
-                         <p class="text-gray-500 mb-4">Average daily increase in CRS Ingest over the last year.</p>
+                         <p class="text-gray-500 mb-4" id="growth-desc">Average daily increase in CRS Ingest.</p>
                          <div id="dailyGrowth" class="text-3xl font-bold p-4 rounded-lg"></div>
                     </div>
-
-                    <!-- Card 3: 1-Year Trend Line Chart -->
                     <div class="bg-white p-6 rounded-2xl shadow-md md:col-span-2 lg:col-span-3">
-                        <h2 class="text-xl font-semibold mb-4">Utilized Capacity Trend (Last Year)</h2>
+                        <h2 class="text-xl font-semibold mb-4" id="trend-chart-title">Utilized Capacity Trend</h2>
                         <p class="text-sm text-gray-500 mb-4">Showing the daily utilized capacity (GB/day) and the calculated long-term trendline.</p>
                         <div class="h-96">
                             <canvas id="usageTrendChart"></canvas>
@@ -134,24 +132,21 @@
     </div>
 
     <script>
-        // --- CHART INSTANCE VARIABLES ---
         let usagePieChartInstance = null;
         let usageTrendChartInstance = null;
+        let fullParsedData = [];
 
-        // --- UI ELEMENT REFERENCES ---
         const fileInput = document.getElementById('csv-upload');
         const uploadPrompt = document.getElementById('upload-prompt');
         const dashboardContent = document.getElementById('dashboard-content');
         const errorMessageDiv = document.getElementById('error-message');
         const errorTextSpan = document.getElementById('error-text');
         const exportPdfBtn = document.getElementById('export-pdf-btn');
-
-        // --- UTILITY FUNCTIONS ---
+        const lookbackSelector = document.getElementById('lookback-selector');
+        
         function formatGB(gb) {
             if (gb === undefined || gb === null || isNaN(gb)) return 'N/A';
-            if (gb >= 1000) {
-                return (gb / 1000).toFixed(2) + ' TB';
-            }
+            if (gb >= 1000) return (gb / 1000).toFixed(2) + ' TB';
             return Math.round(gb) + ' GB';
         }
         
@@ -181,9 +176,7 @@
             const n = data.length;
             if (n < 2) return { slope: 0, intercept: 0 };
             let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-            for (const p of data) {
-                sumX += p.x; sumY += p.y; sumXY += p.x * p.y; sumXX += p.x * p.x;
-            }
+            for (const p of data) { sumX += p.x; sumY += p.y; sumXY += p.x * p.y; sumXX += p.x * p.x; }
             const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
             const intercept = (sumY - slope * sumX) / n;
             return { slope, intercept };
@@ -195,59 +188,65 @@
             dashboardContent.classList.add('hidden');
             uploadPrompt.classList.remove('hidden');
             exportPdfBtn.disabled = true;
-            exportPdfBtn.className = 'btn export-btn-disabled';
+            exportPdfBtn.className = 'control btn disabled-control';
+            lookbackSelector.disabled = true;
+            lookbackSelector.className = 'control disabled-control';
         }
         
         function hideError() {
             errorMessageDiv.classList.add('hidden');
         }
 
-        /**
-         * Main function to generate/update the dashboard from parsed data.
-         */
-        function generateDashboard(allData) {
+        function renderDashboard() {
+            const lookbackDays = parseInt(lookbackSelector.value, 10);
+
             if (usagePieChartInstance) usagePieChartInstance.destroy();
             if (usageTrendChartInstance) usageTrendChartInstance.destroy();
 
-            // --- 1. PIE CHART ---
-            const last14DaysData = allData.slice(-14);
-            const avgUtilized14Days = last14DaysData.reduce((sum, d) => sum + d.utilized, 0) / last14DaysData.length;
-            const latestReserved = last14DaysData.length > 0 ? last14DaysData[last14DaysData.length - 1].reserved : 0;
-            const avgFree = Math.max(0, latestReserved - avgUtilized14Days);
-            const usedPercentage = latestReserved > 0 ? ((avgUtilized14Days / latestReserved) * 100).toFixed(1) : 0;
-            const freePercentage = latestReserved > 0 ? ((avgFree / latestReserved) * 100).toFixed(1) : 0;
+            // --- PIE CHART (ALWAYS LAST 14 DAYS OF FULL DATASET) ---
+            const last14DaysData = fullParsedData.slice(-14);
+            if (last14DaysData.length > 0) {
+                 const avgUtilized14Days = last14DaysData.reduce((sum, d) => sum + d.utilized, 0) / last14DaysData.length;
+                 const latestReserved = last14DaysData[last14DaysData.length - 1].reserved;
+                 const avgFree = Math.max(0, latestReserved - avgUtilized14Days);
+                 const usedPercentage = latestReserved > 0 ? ((avgUtilized14Days / latestReserved) * 100).toFixed(1) : 0;
+                 const freePercentage = latestReserved > 0 ? ((avgFree / latestReserved) * 100).toFixed(1) : 0;
 
-            usagePieChartInstance = new Chart(document.getElementById('usagePieChart'), {
-                type: 'doughnut',
-                data: {
-                    labels: [`Utilized (${usedPercentage}%)`, `Remaining (${freePercentage}%)`],
-                    datasets: [{ data: [avgUtilized14Days, avgFree], backgroundColor: ['#261F63', '#898A8D'], borderColor: '#ffffff', borderWidth: 4, hoverOffset: 8 }]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false, cutout: '70%',
-                    plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => `${c.label}: ${formatGB(c.parsed)}` } } }
-                }
-            });
+                usagePieChartInstance = new Chart(document.getElementById('usagePieChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: [`Utilized (${usedPercentage}%)`, `Remaining (${freePercentage}%)`],
+                        datasets: [{ data: [avgUtilized14Days, avgFree], backgroundColor: ['#261F63', '#898A8D'], borderColor: '#ffffff', borderWidth: 4, hoverOffset: 8 }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => `${c.label}: ${formatGB(c.parsed)}` } } } }
+                });
+            }
 
-            // --- 2. TREND & CROSSOVER ---
-            const oneYearAgo = new Date();
-            oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-            const lastYearData = allData.filter(d => d.date >= oneYearAgo);
+            // --- FILTER DATA FOR DYNAMIC CHARTS ---
+            const lookbackDate = new Date();
+            lookbackDate.setDate(lookbackDate.getDate() - lookbackDays);
+            const filteredData = fullParsedData.filter(d => d.date >= lookbackDate);
             
-            if(lastYearData.length < 2) {
-                showError("Not enough data in the last year to calculate a trend.");
+            if (filteredData.length < 2) {
+                showError(`Not enough data for the selected lookback period (${lookbackDays} days).`);
                 return;
             }
 
-            const regressionData = lastYearData.map((d, i) => ({ x: i, y: d.utilized }));
+            // --- DYNAMIC CALCULATIONS & RENDERING ---
+            const regressionData = filteredData.map((d, i) => ({ x: i, y: d.utilized }));
             const { slope, intercept } = linearRegression(regressionData);
-            const trendlineData = lastYearData.map((d, i) => ({ x: d.date.getTime(), y: slope * i + intercept }));
-            const targetReserved = lastYearData[lastYearData.length - 1].reserved;
-            const crossoverDateEl = document.getElementById('crossoverDate');
+            const trendlineData = filteredData.map((d, i) => ({ x: d.date.getTime(), y: slope * i + intercept }));
+            const targetReserved = filteredData[filteredData.length - 1].reserved;
+            
+            // Update titles and descriptions
+            document.getElementById('crossover-desc').textContent = `Based on the trend over the last ${lookbackDays} days.`;
+            document.getElementById('growth-desc').textContent = `Average daily increase over the last ${lookbackDays} days.`;
+            document.getElementById('trend-chart-title').textContent = `Utilized Capacity Trend (Last ${lookbackDays} Days)`;
 
+            const crossoverDateEl = document.getElementById('crossoverDate');
             if (slope > 0 && targetReserved > intercept) {
                 const daysToCrossover = (targetReserved - intercept) / slope;
-                const startDate = lastYearData[0].date;
+                const startDate = filteredData[0].date;
                 const crossoverDate = new Date(startDate);
                 crossoverDate.setDate(startDate.getDate() + Math.ceil(daysToCrossover));
                 crossoverDateEl.textContent = crossoverDate.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
@@ -265,13 +264,13 @@
                 dailyGrowthEl.textContent = `${slope.toFixed(1)} GB / day`;
                 dailyGrowthEl.className = 'text-3xl font-bold p-4 rounded-lg text-[#7F2854] bg-[#F05818]/50';
             }
-
-            // --- 3. LINE CHART ---
+            
+            // --- LINE CHART ---
             usageTrendChartInstance = new Chart(document.getElementById('usageTrendChart'), {
                 type: 'line',
                 data: {
                     datasets: [
-                        { label: 'Daily Utilization', data: lastYearData.map(d => ({ x: d.date.getTime(), y: d.utilized })), borderColor: '#261F63', backgroundColor: 'rgba(38, 31, 99, 0.1)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3 },
+                        { label: 'Daily Utilization', data: filteredData.map(d => ({ x: d.date.getTime(), y: d.utilized })), borderColor: '#261F63', backgroundColor: 'rgba(38, 31, 99, 0.1)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3 },
                         { label: 'Trendline', data: trendlineData, borderColor: '#F05918', borderWidth: 2, pointRadius: 0, borderDash: [5, 5], fill: false }
                     ]
                 },
@@ -286,44 +285,33 @@
                 }
             });
 
-            // Show dashboard and enable export
+            // Show dashboard and enable controls
             uploadPrompt.classList.add('hidden');
             dashboardContent.classList.remove('hidden');
             exportPdfBtn.disabled = false;
-            exportPdfBtn.className = 'btn export-btn-active';
+            exportPdfBtn.className = 'control btn export-btn-active';
+            lookbackSelector.disabled = false;
+            lookbackSelector.className = 'control export-btn-active';
         }
         
-        /**
-         * Exports the visible dashboard content to a PDF.
-         */
         function exportToPDF() {
             const { jsPDF } = window.jspdf;
             const content = document.getElementById('dashboard-content');
-            
-            // Disable chart animations for capture
             Chart.defaults.animation = false;
-            
-            // Temporarily make the content visible if it's not (for the rendering engine)
             const wasHidden = content.classList.contains('hidden');
             if(wasHidden) content.classList.remove('hidden');
 
-            html2canvas(content, { scale: 2, windowWidth: 1200 }) // Use a fixed width for consistent layout
+            html2canvas(content, { scale: 2, windowWidth: 1200 })
                 .then(canvas => {
                     const imgData = canvas.toDataURL('image/png');
                     const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
-                    
                     const pdfWidth = pdf.internal.pageSize.getWidth();
-                    const pdfHeight = pdf.internal.pageSize.getHeight();
                     const margin = 40;
-                    
                     const imgProps = pdf.getImageProperties(imgData);
                     const imgWidth = pdfWidth - margin * 2;
                     const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-                    
                     pdf.addImage(imgData, 'PNG', margin, margin, imgWidth, imgHeight);
                     pdf.save('crs_ingest_report.pdf');
-                    
-                    // Restore chart animations and visibility
                     Chart.defaults.animation = true;
                     if(wasHidden) content.classList.add('hidden');
                 }).catch(err => {
@@ -333,7 +321,6 @@
                 });
         }
 
-
         // --- EVENT LISTENERS ---
         fileInput.addEventListener('change', (event) => {
             const file = event.target.files[0];
@@ -341,17 +328,27 @@
             hideError();
             const reader = new FileReader();
             reader.onload = (e) => {
-                const data = parseCSV(e.target.result);
-                if (data) generateDashboard(data);
-                fileInput.value = ''; // Reset input
+                fullParsedData = parseCSV(e.target.result);
+                if (fullParsedData && fullParsedData.length > 0) {
+                    renderDashboard();
+                } else if (!errorMessageDiv.classList.contains('hidden')) {
+                    // showError was already called by parseCSV
+                } else {
+                    showError("File contains no valid data rows.");
+                }
+                fileInput.value = '';
             };
             reader.onerror = () => { showError('Failed to read the file.'); fileInput.value = ''; };
             reader.readAsText(file);
         });
 
         exportPdfBtn.addEventListener('click', () => {
-            if(!exportPdfBtn.disabled){
-                exportToPDF();
+            if(!exportPdfBtn.disabled) exportToPDF();
+        });
+
+        lookbackSelector.addEventListener('change', () => {
+            if (fullParsedData.length > 0) {
+                renderDashboard();
             }
         });
 
