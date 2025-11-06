@@ -73,6 +73,7 @@
                     <option value="90">Last 90 Days</option>
                     <option value="180">Last 180 Days</option>
                     <option value="365" selected>Last 365 Days</option>
+                    <option value="all">All Time</option>
                 </select>
                 <label for="csv-upload" class="control btn upload-btn">Load CSV</label>
                 <input type="file" id="csv-upload" accept=".csv, text/csv">
@@ -240,7 +241,9 @@
         }
 
         function renderDashboard() {
-            const lookbackDays = parseInt(lookbackSelector.value, 10);
+            const lookbackValue = lookbackSelector.value;
+            const isAllTime = lookbackValue === 'all';
+            const lookbackDays = isAllTime ? null : parseInt(lookbackValue, 10);
 
             if (usagePieChartInstance) usagePieChartInstance.destroy();
             if (usageTrendChartInstance) usageTrendChartInstance.destroy();
@@ -275,24 +278,37 @@
             }
 
             // --- FILTER DATA FOR DYNAMIC CHARTS ---
-            const lookbackDate = new Date();
-            const latestDate = new Date(fullParsedData[fullParsedData.length - 1].date);
-            lookbackDate.setTime(latestDate.getTime() - (lookbackDays * 24 * 60 * 60 * 1000));
-            const filteredData = fullParsedData.filter(d => d.date >= lookbackDate);
+            let filteredData;
+            if (isAllTime) {
+                filteredData = fullParsedData;
+            } else {
+                const lookbackDate = new Date();
+                const latestDate = new Date(fullParsedData[fullParsedData.length - 1].date);
+                lookbackDate.setTime(latestDate.getTime() - (lookbackDays * 24 * 60 * 60 * 1000));
+                filteredData = fullParsedData.filter(d => d.date >= lookbackDate);
+            }
             
             if (filteredData.length < 2) {
-                showError(`Not enough data for the selected lookback period (${lookbackDays} days). At least 2 data points are required.`);
+                const periodText = isAllTime ? 'the dataset' : `the selected lookback period (${lookbackDays} days)`;
+                showError(`Not enough data for ${periodText}. At least 2 data points are required.`);
                 return;
             }
+
+            // Calculate date range for intelligent axis configuration
+            const dateRangeMs = filteredData[filteredData.length - 1].date - filteredData[0].date;
+            const daysDifference = dateRangeMs / (1000 * 60 * 60 * 24);
 
             const regressionData = filteredData.map((d, i) => ({ x: i, y: d.utilized }));
             const { slope, intercept } = linearRegression(regressionData);
             const trendlineData = filteredData.map((d, i) => ({ x: d.date.getTime(), y: slope * i + intercept }));
             const targetReserved = filteredData[filteredData.length - 1].reserved;
             
-            document.getElementById('crossover-desc').textContent = `Based on the trend over the last ${lookbackDays} days.`;
-            document.getElementById('growth-desc').textContent = `Average daily increase over the last ${lookbackDays} days.`;
-            document.getElementById('trend-chart-title').textContent = `Utilized Capacity Trend (Last ${lookbackDays} Days)`;
+            const periodDescription = isAllTime ? 'all available data' : `the last ${lookbackDays} days`;
+            document.getElementById('crossover-desc').textContent = `Based on the trend over ${periodDescription}.`;
+            document.getElementById('growth-desc').textContent = `Average daily increase over ${periodDescription}.`;
+            
+            const titlePeriod = isAllTime ? 'All Time' : `Last ${lookbackDays} Days`;
+            document.getElementById('trend-chart-title').textContent = `Utilized Capacity Trend (${titlePeriod})`;
 
             const crossoverDateEl = document.getElementById('crossoverDate');
             if (slope > 0 && targetReserved > intercept) {
@@ -328,11 +344,21 @@
                 yTickCallback = (v) => v + ' GB';
             }
 
+            // Intelligent X-axis unit selection based on time range
             let xAxisUnit = 'month';
-            if (lookbackDays <= 31) {
+            if (daysDifference <= 31) {
                 xAxisUnit = 'day';
-            } else if (lookbackDays <= 180) {
+            } else if (daysDifference <= 180) {
                 xAxisUnit = 'week';
+            } else if (daysDifference <= 730) {
+                // Up to 2 years: use month
+                xAxisUnit = 'month';
+            } else if (daysDifference <= 1825) {
+                // 2-5 years: use quarter
+                xAxisUnit = 'quarter';
+            } else {
+                // 5+ years: use year
+                xAxisUnit = 'year';
             }
             
             // --- LINE CHART ---
@@ -433,4 +459,3 @@
     </script>
 </body>
 </html>
-
